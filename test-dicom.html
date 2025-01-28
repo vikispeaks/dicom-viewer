@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DICOM Viewer Test</title>
+    <!-- Dependencies -->
+    <script src="https://unpkg.com/cornerstone-core/dist/cornerstone.js"></script>
+    <script src="https://unpkg.com/cornerstone-math/dist/cornerstoneMath.js"></script>
+    <script src="https://unpkg.com/cornerstone-tools/dist/cornerstoneTools.js"></script>
+    <script src="https://unpkg.com/dicom-parser/dist/dicomParser.js"></script>
+    <script src="https://unpkg.com/cornerstone-wado-image-loader/dist/cornerstoneWADOImageLoader.bundle.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .viewer-container {
+            flex: 1;
+            padding: 10px;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0; /* Prevent flex items from overflowing */
+        }
+        .side-panel {
+            width: 300px;
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 10px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .file-selector {
+            padding: 8px;
+            background: #34495e;
+            border-bottom: 1px solid #2c3e50;
+        }
+        select {
+            padding: 6px;
+            width: 100%;
+            border: 1px solid #2c3e50;
+            background: #ecf0f1;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .toolbar {
+            padding: 8px;
+            background: #34495e;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .toolbar button {
+            background: #2c3e50;
+            color: #ecf0f1;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .toolbar button:hover {
+            background: #3498db;
+        }
+        .toolbar button.active {
+            background: #2980b9;
+        }
+        .viewport {
+            flex: 1;
+            position: relative;
+            background: #000;
+            margin: 5px 0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+        }
+        .loading.active {
+            display: block;
+        }
+        .image-info {
+            background: #34495e;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .image-info h3 {
+            margin: 0 0 8px 0;
+            color: #3498db;
+            font-size: 15px;
+        }
+        .image-info-item {
+            margin: 4px 0;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .image-info-item span:first-child {
+            color: #bdc3c7;
+        }
+        .tool-group {
+            display: flex;
+            gap: 4px;
+        }
+        /* Add responsive adjustments */
+        @media (max-width: 1200px) {
+            .side-panel {
+                width: 250px;
+            }
+        }
+        @media (max-width: 992px) {
+            .toolbar button {
+                padding: 5px 8px;
+                font-size: 12px;
+            }
+            .side-panel {
+                width: 220px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="viewer-container">
+            <div class="file-selector">
+                <select id="fileSelect">
+                    <option value="">Select a DICOM file...</option>
+                </select>
+            </div>
+            <div class="toolbar">
+                <div class="tool-group">
+                    <button id="windowLevel" title="Window/Level: Left click + Drag">W/L</button>
+                    <button id="pan" title="Pan: Left click + Drag">Pan</button>
+                    <button id="zoom" title="Zoom: Left click + Drag">Zoom</button>
+                </div>
+                <div class="tool-group">
+                    <button id="invert" title="Invert colors">Invert</button>
+                    <button id="hflip" title="Flip horizontally">H Flip</button>
+                    <button id="vflip" title="Flip vertically">V Flip</button>
+                    <button id="rotate" title="Rotate 90°">Rotate</button>
+                </div>
+                <div class="tool-group">
+                    <button id="length" title="Length: Left click to start, Left click to end">Length</button>
+                    <button id="angle" title="Angle: Left click to place points">Angle</button>
+                </div>
+                <div class="tool-group">
+                    <button id="reset" title="Reset image">Reset</button>
+                </div>
+            </div>
+            <div id="dicomImage" class="viewport">
+                <div id="loading" class="loading">Loading...</div>
+            </div>
+        </div>
+        <div class="side-panel">
+            <div class="image-info">
+                <h3>Image Information</h3>
+                <div id="imageInfo"></div>
+            </div>
+            <div class="image-info">
+                <h3>DICOM Tags</h3>
+                <div id="dicomTags"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize cornerstone
+        async function initializeViewer() {
+            // Initialize DICOM image loader
+            cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
+            cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
+
+            // Configure web worker
+            cornerstoneWADOImageLoader.webWorkerManager.initialize({
+                maxWebWorkers: navigator.hardwareConcurrency || 1,
+                startWebWorkersOnDemand: true,
+                taskConfiguration: {
+                    decodeTask: {
+                        initializeCodecsOnStartup: false,
+                        usePDFJS: false,
+                        strict: false,
+                    },
+                },
+            });
+
+            // Get the display element
+            const element = document.getElementById('dicomImage');
+            cornerstone.enable(element);
+
+            // Initialize tools
+            cornerstoneTools.init();
+            
+            // Add tools
+            cornerstoneTools.addTool(cornerstoneTools.WwwcTool);
+            cornerstoneTools.addTool(cornerstoneTools.PanTool);
+            cornerstoneTools.addTool(cornerstoneTools.ZoomTool);
+            cornerstoneTools.addTool(cornerstoneTools.LengthTool);
+            cornerstoneTools.addTool(cornerstoneTools.AngleTool);
+
+            function setActiveTool(toolName) {
+                // Remove active class from all buttons
+                document.querySelectorAll('.toolbar button').forEach(btn => btn.classList.remove('active'));
+                // Add active class to selected tool button
+                document.getElementById(toolName.toLowerCase()).classList.add('active');
+                // Deactivate all tools
+                cornerstoneTools.setToolDisabled('Wwwc');
+                cornerstoneTools.setToolDisabled('Pan');
+                cornerstoneTools.setToolDisabled('Zoom');
+                cornerstoneTools.setToolDisabled('Length');
+                cornerstoneTools.setToolDisabled('Angle');
+                // Activate selected tool
+                cornerstoneTools.setToolActive(toolName, { mouseButtonMask: 1 });
+            }
+
+            // Add tool button listeners
+            document.getElementById('windowLevel').addEventListener('click', () => setActiveTool('Wwwc'));
+            document.getElementById('pan').addEventListener('click', () => setActiveTool('Pan'));
+            document.getElementById('zoom').addEventListener('click', () => setActiveTool('Zoom'));
+            document.getElementById('length').addEventListener('click', () => setActiveTool('Length'));
+            document.getElementById('angle').addEventListener('click', () => setActiveTool('Angle'));
+
+            // Enable mouse wheel zoom
+            element.addEventListener('wheel', (e) => {
+                if (!e.shiftKey) {
+                    e.preventDefault();
+                    const viewport = cornerstone.getViewport(element);
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    viewport.scale += delta;
+                    cornerstone.setViewport(element, viewport);
+                }
+            });
+
+            document.getElementById('reset').addEventListener('click', () => {
+                cornerstone.reset(element);
+                updateImageInfo(element);
+            });
+
+            // Update image information
+            function updateImageInfo(element) {
+                const viewport = cornerstone.getViewport(element);
+                const image = cornerstone.getImage(element);
+                if (!image) return;
+
+                const info = document.getElementById('imageInfo');
+                info.innerHTML = `
+                    <div class="image-info-item">
+                        <span>Window Width:</span>
+                        <span>${viewport.voi.windowWidth.toFixed(2)}</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>Window Center:</span>
+                        <span>${viewport.voi.windowCenter.toFixed(2)}</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>Zoom:</span>
+                        <span>${viewport.scale.toFixed(2)}x</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>Image Size:</span>
+                        <span>${image.width} x ${image.height}</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>Pixel Spacing:</span>
+                        <span>${image.rowPixelSpacing?.toFixed(6) || 'N/A'} x ${image.columnPixelSpacing?.toFixed(6) || 'N/A'} mm</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>Rotation:</span>
+                        <span>${viewport.rotation}°</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>H-Flip:</span>
+                        <span>${viewport.hflip ? 'Yes' : 'No'}</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span>V-Flip:</span>
+                        <span>${viewport.vflip ? 'Yes' : 'No'}</span>
+                    </div>
+                `;
+
+                // Update DICOM tags
+                const tags = image.data;
+                if (tags) {
+                    const dicomTags = document.getElementById('dicomTags');
+                    dicomTags.innerHTML = `
+                        <div class="image-info-item">
+                            <span>Patient Name:</span>
+                            <span>${tags.string('x00100010') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Patient ID:</span>
+                            <span>${tags.string('x00100020') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Study Date:</span>
+                            <span>${tags.string('x00080020') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Modality:</span>
+                            <span>${tags.string('x00080060') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Series Number:</span>
+                            <span>${tags.string('x00200011') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Image Number:</span>
+                            <span>${tags.string('x00200013') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Transfer Syntax:</span>
+                            <span>${tags.string('x00020010') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>SOP Class:</span>
+                            <span>${tags.string('x00080016') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Samples Per Pixel:</span>
+                            <span>${tags.uint16('x00280002') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Photometric Interpretation:</span>
+                            <span>${tags.string('x00280004') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Bits Allocated:</span>
+                            <span>${tags.uint16('x00280100') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Bits Stored:</span>
+                            <span>${tags.uint16('x00280101') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>High Bit:</span>
+                            <span>${tags.uint16('x00280102') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Pixel Representation:</span>
+                            <span>${tags.uint16('x00280103') || 'N/A'} (${tags.uint16('x00280103') === 1 ? 'signed' : 'unsigned'})</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Rescale Intercept:</span>
+                            <span>${tags.string('x00281052') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Rescale Slope:</span>
+                            <span>${tags.string('x00281053') || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Min Pixel Value:</span>
+                            <span>${image.minPixelValue || 'N/A'}</span>
+                        </div>
+                        <div class="image-info-item">
+                            <span>Max Pixel Value:</span>
+                            <span>${image.maxPixelValue || 'N/A'}</span>
+                        </div>
+                    `;
+                }
+            }
+
+            // Add image adjustment handlers
+            document.getElementById('invert').addEventListener('click', () => {
+                const element = document.getElementById('dicomImage');
+                const viewport = cornerstone.getViewport(element);
+                viewport.invert = !viewport.invert;
+                cornerstone.setViewport(element, viewport);
+                updateImageInfo(element);
+            });
+
+            document.getElementById('hflip').addEventListener('click', () => {
+                const element = document.getElementById('dicomImage');
+                const viewport = cornerstone.getViewport(element);
+                viewport.hflip = !viewport.hflip;
+                cornerstone.setViewport(element, viewport);
+                updateImageInfo(element);
+            });
+
+            document.getElementById('vflip').addEventListener('click', () => {
+                const element = document.getElementById('dicomImage');
+                const viewport = cornerstone.getViewport(element);
+                viewport.vflip = !viewport.vflip;
+                cornerstone.setViewport(element, viewport);
+                updateImageInfo(element);
+            });
+
+            document.getElementById('rotate').addEventListener('click', () => {
+                const element = document.getElementById('dicomImage');
+                const viewport = cornerstone.getViewport(element);
+                viewport.rotation = (viewport.rotation || 0) + 90;
+                if (viewport.rotation >= 360) {
+                    viewport.rotation = 0;
+                }
+                cornerstone.setViewport(element, viewport);
+                updateImageInfo(element);
+            });
+
+            // Update reset handler to include new properties
+            document.getElementById('reset').addEventListener('click', () => {
+                const element = document.getElementById('dicomImage');
+                cornerstone.reset(element);
+                const viewport = cornerstone.getViewport(element);
+                viewport.invert = false;
+                viewport.hflip = false;
+                viewport.vflip = false;
+                viewport.rotation = 0;
+                cornerstone.setViewport(element, viewport);
+                updateImageInfo(element);
+            });
+
+            // Add viewport update handler
+            element.addEventListener('cornerstoneimagerendered', function(e) {
+                updateImageInfo(e.target);
+                document.getElementById('loading').classList.remove('active');
+            });
+
+            // Load file list
+            async function loadFileList() {
+                try {
+                    const response = await fetch('http://localhost:3000/api/dicom/files');
+                    const files = await response.json();
+                    const select = document.getElementById('fileSelect');
+                    
+                    // Clear existing options except the first one
+                    while (select.options.length > 1) {
+                        select.remove(1);
+                    }
+                    
+                    // Add new options
+                    files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.text = file;
+                        select.add(option);
+                    });
+                } catch (error) {
+                    console.error('Error loading file list:', error);
+                }
+            }
+
+            // Load and display selected image
+            async function loadAndDisplayImage(fileId) {
+                try {
+                    document.getElementById('loading').classList.add('active');
+                    const response = await fetch(`http://localhost:3000/api/dicom/local/${fileId}`);
+                    const data = await response.json();
+                    
+                    // Convert base64 to Uint8Array
+                    const byteCharacters = atob(data.fileContent);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    
+                    // Create blob URL
+                    const blob = new Blob([byteArray], { type: data.contentType });
+                    const url = URL.createObjectURL(blob);
+                    const imageId = `wadouri:${url}`;
+                    
+                    // Load and display the image
+                    const image = await cornerstone.loadImage(imageId);
+                    await cornerstone.displayImage(element, image);
+
+                    // Set up initial tool
+                    setActiveTool('Wwwc');
+                    updateImageInfo(element);
+                } catch (error) {
+                    console.error('Error:', error);
+                    document.getElementById('loading').classList.remove('active');
+                }
+            }
+
+            // Add file select handler
+            document.getElementById('fileSelect').addEventListener('change', (e) => {
+                const fileId = e.target.value;
+                if (fileId) {
+                    loadAndDisplayImage(fileId);
+                }
+            });
+
+            // Load initial file list
+            await loadFileList();
+        }
+
+        // Initialize when page loads
+        window.onload = initializeViewer;
+    </script>
+</body>
+</html> 

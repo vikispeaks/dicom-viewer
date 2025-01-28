@@ -1,0 +1,491 @@
+openapi: 3.0.0
+info:
+  title: DICOM Viewer and Patient Information API
+  description: API for managing DICOM images and accessing patient information
+  version: 1.0.0
+  contact:
+    name: DICOM Viewer Support
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+
+tags:
+  - name: DICOM
+    description: DICOM image management endpoints
+  - name: Patient
+    description: Patient information endpoints
+
+paths:
+  /dicom/files:
+    get:
+      summary: List available DICOM files
+      description: Returns a list of all DICOM files available in the uploads directory
+      operationId: listDicomFiles
+      tags:
+        - DICOM
+      responses:
+        '200':
+          description: Successfully retrieved file list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["1-01", "2-01", "3-01"]
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dicom/upload:
+    post:
+      summary: Upload a DICOM file
+      description: Upload a new DICOM file to the server
+      operationId: uploadDicomFile
+      tags:
+        - DICOM
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                dicomFile:
+                  type: string
+                  format: binary
+                  description: The DICOM file to upload
+      responses:
+        '200':
+          description: File successfully uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: No file uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dicom/local/{fileId}:
+    get:
+      summary: Get local DICOM image
+      description: Retrieve a DICOM image by its file ID
+      operationId: getLocalImage
+      tags:
+        - DICOM
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          description: ID of the DICOM file to retrieve
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved DICOM image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DicomImageContent'
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dicom/wado-uri:
+    get:
+      summary: WADO-URI endpoint
+      description: Retrieve DICOM image using WADO-URI protocol
+      operationId: getImageWadoUri
+      tags:
+        - DICOM
+      parameters:
+        - name: studyUID
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: seriesUID
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: objectUID
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: wadoURL
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved DICOM image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DicomImage'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dicom/studies/{studyInstanceUid}/series/{seriesInstanceUid}/instances/{sopInstanceUid}:
+    get:
+      summary: WADO-RS endpoint
+      description: Retrieve DICOM image using WADO-RS protocol
+      operationId: getImageWadoRs
+      tags:
+        - DICOM
+      parameters:
+        - name: studyInstanceUid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: seriesInstanceUid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sopInstanceUid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved DICOM image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DicomImage'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /patient/{patientId}:
+    get:
+      summary: Get patient brief information
+      description: Returns basic patient information and current diagnosis
+      operationId: getPatientBrief
+      tags:
+        - Patient
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          description: ID of the patient
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved patient brief
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientBrief'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /patient/{patientId}/clinical-notes:
+    get:
+      summary: Get patient clinical notes
+      description: Returns a list of clinical notes for the patient
+      operationId: getClinicalNotes
+      tags:
+        - Patient
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          description: ID of the patient
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved clinical notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClinicalNote'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /patient/{patientId}/problem-list:
+    get:
+      summary: Get patient problem list
+      description: Returns a list of patient's medical problems
+      operationId: getProblemList
+      tags:
+        - Patient
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          description: ID of the patient
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved problem list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /patient/{patientId}/lab-results:
+    get:
+      summary: Get patient lab results
+      description: Returns patient's laboratory test results
+      operationId: getLabResults
+      tags:
+        - Patient
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          description: ID of the patient
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved lab results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabResults'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /patient/{patientId}/allergies:
+    get:
+      summary: Get patient allergies
+      description: Returns a list of patient's allergies
+      operationId: getAllergies
+      tags:
+        - Patient
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          description: ID of the patient
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved allergies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Allergy'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+      required:
+        - message
+      example:
+        message: "Failed to process request"
+
+    UploadResponse:
+      type: object
+      properties:
+        fileId:
+          type: string
+        originalName:
+          type: string
+        size:
+          type: integer
+      required:
+        - fileId
+        - originalName
+        - size
+      example:
+        fileId: "abc123"
+        originalName: "image.dcm"
+        size: 524288
+
+    DicomImageContent:
+      type: object
+      properties:
+        fileContent:
+          type: string
+          format: byte
+          description: Base64 encoded DICOM file content
+        contentType:
+          type: string
+      required:
+        - fileContent
+        - contentType
+      example:
+        contentType: "application/dicom"
+
+    PatientBrief:
+      type: object
+      properties:
+        patientName:
+          type: string
+        reason_for_study:
+          type: string
+        status:
+          type: string
+      required:
+        - patientName
+      example:
+        patientName: "John Doe"
+        reason_for_study: "Annual checkup"
+        status: "active"
+
+    ClinicalNote:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+        doctor:
+          type: string
+        note:
+          type: string
+        type:
+          type: string
+      required:
+        - date
+        - note
+      example:
+        date: "2024-01-28T10:00:00Z"
+        doctor: "Dr. Smith"
+        note: "Patient presents with..."
+        type: "Progress note"
+
+    LabResults:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          value:
+            type: number
+          unit:
+            type: string
+          date:
+            type: string
+            format: date-time
+          status:
+            type: string
+          interpretation:
+            type: string
+      example:
+        hemoglobin:
+          value: 14.2
+          unit: "g/dL"
+          date: "2024-01-28T10:00:00Z"
+          status: "final"
+          interpretation: "normal"
+
+    Allergy:
+      type: object
+      properties:
+        substance:
+          type: string
+        status:
+          type: string
+        severity:
+          type: string
+        onset:
+          type: string
+          format: date-time
+        recordedDate:
+          type: string
+          format: date-time
+      required:
+        - substance
+      example:
+        substance: "Penicillin"
+        status: "active"
+        severity: "moderate"
+        onset: "2020-01-01T00:00:00Z"
+        recordedDate: "2020-01-01T00:00:00Z"
+
+    DicomImage:
+      type: object
+      properties:
+        imageData:
+          type: object
+          description: DICOM image data and metadata
+        metadata:
+          type: object
+          properties:
+            patientName:
+              type: string
+            studyDate:
+              type: string
+            modality:
+              type: string
+            seriesNumber:
+              type: string
+            imageNumber:
+              type: string
+      required:
+        - imageData 
